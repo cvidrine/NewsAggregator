@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="iso-8859-1" ?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>Los Angeles Times - Top News</title>
+      <link>http://feeds.latimes.com/latimes/news</link>
+    </item>
+    <item>
+      <title>Houston Chronicle</title>
+      <link>http://www.chron.com/rss/feed/Politics-275.php</link>
+    </item>
+    <item>
+      <title>Wall Street Journal - World News</title>
+      <link>http://www.wsj.com/xml/rss/3_7085.xml</link>
+    </item>
+    <item>
+      <title>Wall Street Journal - Technology</title>
+      <link>http://www.wsj.com/xml/rss/3_7455.xml</link>
+    </item>
+    <item>
+      <title>National News - New York Post</title>
+      <link>http://www.nypost.com/rss/news.xml</link>
+    </item>
+    <item>
+      <title>News - Philadelphia Inquirer</title>
+      <link>http://www.philly.com/philly_news.rss</link>
+    </item>
+    <item>
+      <title>Top News - Columbus Dispatch</title>
+      <link>http://www.dispatch.com/content/syndication/news_national.xml</link>
+    </item>
+    <item>
+      <title>National News - Minneapolis &amp; St. Paul Star Tribune</title>
+      <link>http://www.startribune.com/nation/index.rss2</link>
+    </item>
+    <item>
+      <title>National News - San Francisco Chronicle</title>
+      <link>http://www.sfgate.com/rss/feed/National-News-RSS-Feed-435.php</link>
+    </item>
+  </channel>
+</rss>

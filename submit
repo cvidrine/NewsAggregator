@@ -1,0 +1,202 @@
+#!/usr/bin/python2
+
+"""
+Julie Zelenski, Nate Hardison, Michael Chang 2009-present
+
+Submit program to verify project validity, submit for grading.
+"""
+
+import base_student_tool
+import commands, datetime, os, shutil, sys
+import course, gen, hg, manifest, ui, uid, util
+from repos import HgRepo
+
+BANNER = '-'*30
+
+def verify_repo_committed(repo):
+    if hg.is_locked(repo.path):
+        ui.exit_done("This repo appears to be stuck in a locked state.\nTry %s/tools/unlockrepo to fix, then re-run submit." % gen.COURSE_PATH)
+    print "\nVerifying all changes have been committed...",
+    changes = hg.uncommitted_changes(repo.path)
+    if changes:
+        needs_commit = "\nThe files listed below have been modified but not committed:\n%s\n%s\n%s\nYou must first commit changes, then re-run submit." % (BANNER, changes, BANNER)
+        ui.exit_done(needs_commit)
+    print "OK"
+
+def verify_build(repo):
+    # clone into temp dir, make and verify success, then delete clone
+    # by using clone will catch dependencies on files not correctly added to repo
+    print "Verifying there are no build errors...",
+    tmpdir = hg.make_clone(repo.path)
+    status, output = commands.getstatusoutput("cd %s && make clean && make" % tmpdir)
+    shutil.rmtree(tmpdir)
+    if status != 0:
+        print "\n\n%s\n%s\n%s\n%s\n" % (ui.red("Your project had the following build errors:"), BANNER, ui.abbreviate(output), BANNER)
+        ui.exit_done("You must first resolve build errors, then re-run submit.")
+    print "OK"
+
+def verify_text_files(repo, names):
+    # diff txt file with original version in starter, alert user if not edited much, remind to save/commit
+    unchanged = [n for n in names if repo.file_is_largely_unchanged(n)]
+    if len(unchanged) > 0:
+        not_edited = "\nHmm... your files %s have suspiciously few changes from the starter.\nIf this is an oversight, stop here, save and commit changes, then re-run submit." % ui.pretty_list(unchanged)
+        print ui.red(not_edited)
+        ui.confirm_or_exit("Continue submit anyway?")
+
+def verify_sanitycheck(repo):
+    print "We recommend verifying your output is conformant using sanity check."
+    if ui.get_yes_or_no("Would you like to run sanity check right now?"):
+        (nfailures, nrun) = manifest.run_sanity_check(repo)
+        if nfailures != 0:
+            sanity_fail = "\nThis submission does not pass all of sanity check.\nWe recommend that you stop here and resolve these issues before submitting."
+            print ui.red(sanity_fail)
+            ui.confirm_or_exit("Continue submit anyway?", default="n")
+        else:
+            print "\nThis submission passes sanity check, continuing with submit."
+    print
+
+def verify_deadline(whensubmit, submitname):
+    use_grace = course.late_policy(submitname) == "grace"
+    (due, endgrace) = course.duedate_for(submitname)
+    if use_grace:
+        allowed = ("grace period until %s" % ui.niceduedate(endgrace)) if endgrace else "No grace period"
+    else:
+        allowed = ("late submissions accepted until %s" % ui.niceduedate(endgrace)) if endgrace else "No late submissions accepted"
+    print "The deadline for %s is %s. (%s)" % (submitname, ui.niceduedate(due), allowed)
+    status = course.check_submit_lateness(submitname, whensubmit)
+    if status == course.ON_TIME:
+        print "This submission is on-time!"
+    elif status == course.IN_GRACE:
+        if use_grace:
+            print "This submission is late, but within the grace period."
+        else:
+            nlate = course.compute_late_days(submitname, whensubmit)
+            print "This submission is %d day%s late." % (nlate, "s" if nlate != 1 else "")
+    else:
+        ui.exit_done("Submissions have closed for %s. This submission will not be accepted." % submitname)
+
+def verify_redux_deadline(whensubmit, reduxname, origname):
+    try:
+        (due, endgrace) = course.duedate_for(origname)
+        hard = endgrace if endgrace else due
+        redux_info = gen.ASSIGN_INFO[reduxname]
+        days_after_hard_deadline = (whensubmit - hard).days
+        if days_after_hard_deadline <= redux_info.window:
+            print "This re-submission is within the window for sanity amnesty and can be accepted."
+            return
+        print "This re-submission of %s is %d days past the %s deadline/end of grace period." % (origname, days_after_hard_deadline, origname)
+        msg = "This exceeds the sanity re-submit window of %d days. This re-submission will not be accepted." % (redux_info.window)
+        ui.exit_done(msg)
+    except Exception as ex:
+        raise Exception("submit cannot calculate re-submit window for %s (%s)" % (origname, str(ex))), None, sys.exc_info()[2]
+
+def confirm_redux(origname, reduxname, dst_path):
+    print "Submit was invoked in %s mode (resubmitting for sanity test amnesty)." % ui.bold("redux")
+    if not course.is_redux_assignment(reduxname) or not hg.has_valid_repo(dst_path):
+        ui.exit_done("Redux submission is not available.")
+    if origname not in gen.ASSIGN_INFO[reduxname].redux_assigns:
+        ui.exit_done("%s is not a valid choice for redux submission." % origname)
+    print "You may make at most one redux submission."
+    ui.confirm_or_exit("Continue redux submission of %s?" % ui.bold(origname))
+
+def confirm_forced():
+    print ui.red("\nSubmit was invoked in forced mode. This should only be used with staff approval.")
+    ui.confirm_or_exit("Continue forced submission?")
+
+def get_partner(submitter):
+    # returns partner or None, verifies valid sunet and not same as submitter
+    if not ui.get_yes_or_no("Did you work with a partner on this assignment?"):
+        return None
+    while True:
+        partner = ui.get_input("Enter your partner's sunet id (login name, not number): ")
+        if not partner:
+            return None
+        if partner == submitter:
+            print "That's _your_ sunet, we need your partner's sunet. Please try again."
+        elif not uid.is_valid_username(partner):
+            print "%s is not recognized as a valid sunet id. Please try again." % partner
+        else:
+            return partner.lower()
+
+# manually copies dir to replicate contents & preserve metadata
+# raw copy can be useful when repo is damaged in some way that interferes with regular submit
+# or when we want to receive repo unmodified
+def cp_to_fallback(src, users, assignname, whensubmit):
+    dst = "%s/fallback/%s-%s-%s" % (gen.REPO_PATH, assignname, users, whensubmit.strftime("%m-%d-%H%M"))
+    while os.path.exists(dst):
+        dst = dst + 'X'  # keep adding X to end of directory name until unique
+    try:
+        # ignore metadata for symlinks as they are problematic
+        shutil.copytree(src, dst, symlinks=True)  # ignore=lambda dir,names: ['hgrc']) needs 2.6
+    except Exception as ex:
+        raise Exception("submit failed to copy to %s: %s" % (gen.shortpath(dst), ex)), None, sys.exc_info()[2]  # propagate traceback
+    return dst
+
+def clone_and_cp_submission(src, users, assignname, whensubmit):
+    # clone from dir to tmp, copy from tmp (this way we only get repo files, not cores or build products)
+    tmpdir = hg.make_clone(src)   # make clone in /tmp
+    commands.getstatusoutput("rm -f %s/.hg/hgrc" % tmpdir)  # remove any hgrc since won't be trusted anyway
+    dst = cp_to_fallback(src, users, assignname, whensubmit)
+    shutil.rmtree(tmpdir)   # remove tmp clone
+    util.send_mail(gen.EMAIL_SENDER, gen.STAFF_EMAIL, dst, subject="FALLBACK SUBMIT %s %s" % (users, assignname))
+
+
+# -----------------------------------------------------------------
+# Main function: submit
+# -----------------------------------------------------------------
+
+if __name__ == "__main__":
+    flags = [("-f","isforced",False), ("-r","isredux",False)]
+    op = util.OptionParser(flags)
+    try:
+        (args, remaining) = op.process_options(sys.argv[1:])
+        if remaining: raise Exception("option %s not recognized" % remaining[0])
+    except Exception as ex:
+        ui.exit_error("Incorrect %s usage: %s" % (os.path.basename(sys.argv[0]), str(ex)))
+
+    print "This tool submits the repo in the current directory for grading."
+    now = datetime.datetime.now()
+    print "Current directory is " + os.getcwd()
+    try:
+        if args.isredux or args.isforced:
+            reponame = ui.get_choice("Which assignment are you submitting?", gen.ASSIGN_NAMES)
+        else:
+            reponame = None
+        repo = HgRepo.load_from_path(os.getcwd(), reponame=reponame, sunet=gen.username())  # raises if no .hg, wrong permissions, cannot intuit reponame, etc.
+    except Exception as ex:
+        ui.exit_done("%s\nPlease change to your project directory and re-run submit." % str(ex))
+
+    if repo.reponame not in gen.ASSIGN_NAMES:
+        ui.exit_done("Submission is not enabled for %s." % repo.reponame)
+    info = gen.ASSIGN_INFO[repo.reponame]
+    submitname = "redux" if args.isredux else repo.reponame
+    dst_path = os.path.join(gen.REPO_PATH, submitname, repo.sunet)
+    if not hg.has_valid_repo(dst_path):
+        raise Exception("There is no %s class repo for %s/%s" % (gen.COURSE.lower(), submitname, repo.sunet))
+
+    if args.isredux: confirm_redux(repo.reponame, submitname, dst_path)
+    if args.isforced: confirm_forced()
+
+    partner = get_partner(repo.sunet) if info.canpartner else None
+    if partner and args.isforced: repo.sunet = repo.sunet + '-' + partner  # fallback directories will be named with partner
+
+    if args.isforced: cp_to_fallback(repo.path, repo.sunet, "raw-" + repo.reponame, now)
+
+    verify_repo_committed(repo)
+    if info.checkcompile: verify_build(repo)
+    if info.checkedited: verify_text_files(repo, info.checkedited)
+    if manifest.sanity_check_exists(repo.reponame): verify_sanitycheck(repo)
+    if args.isredux: verify_redux_deadline(now, submitname, repo.reponame)
+    elif not args.isforced: verify_deadline(now, submitname)
+
+    comment = "user-%s" % repo.sunet + (" partner-%s" % partner if partner else "") + (" %s-%s" % (submitname, repo.reponame) if args.isredux else "") + (" forced" if args.isforced else "")
+    hg.add_tag_for_submit(repo.path, submitname, comment)
+    try:
+        if args.isforced:
+            clone_and_cp_submission(repo.path, repo.sunet, repo.reponame, now)
+        else:
+            hg.push_repo(repo.path, dst_path)
+    except Exception as ex:
+        hg.undo_tag(repo.path)  # remove submit tag
+        raise
+    print "\nCOMPLETED: %s submitted %s %s." % (repo.sunet, repo.reponame, ui.niceduedate(now))

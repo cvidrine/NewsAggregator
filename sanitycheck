@@ -1,0 +1,102 @@
+#!/usr/bin/python2
+
+"""
+Julie Zelenski, Ryan Noon, Michael Chang 2009-present
+
+Sanity check compares student program to sample on simple conformance tests.
+Has custom option for students to define their own custom test cases.
+"""
+
+import base_student_tool
+import commands, os, sys
+import gen, manifest, results, testing, ui, util
+from repos import HgRepo, Repo
+
+
+def parse_custom_test_file(fname, repo):
+    custom_template = manifest.custom_template(repo.reponame)
+    if not custom_template:
+        ui.exit_done("Cannot run custom test cases from file '%s' (no custom sanity check available for %s)." % (fname, repo.reponame))
+
+    content = util.read_file(fname)      # verify file is readable and text format
+    if content is None:
+        ui.exit_done("Unable to read custom test cases from file '%s' (file not found or cannot be read)." % fname)
+    if "text/" not in commands.getoutput("file -b --mime %s" % fname):
+        ui.exit_done("Unable to read custom test cases from file '%s' (file does not contain text)." % fname)
+
+    print "Reading custom test cases from file '%s'..." % fname,
+    # verify each line is valid format for test case
+    numbered_lines = [(n+1, line) for (n, line) in enumerate(content.split('\n')) if not (line.strip() == '' or line.strip().startswith("#"))]  # remove empty/comment lines
+    custom_tests = []
+    for (n, line) in numbered_lines:
+        try:
+            t = manifest.create_custom_sanity_test(custom_template, line, len(custom_tests)+1)
+            custom_tests.append(t)
+        except Exception as e:
+            print ui.red("\n\nRejected line %d '%s' (%s)" % (n, line, str(e)))
+            print "  Each custom test case must be a single line in the following format:"
+            print "      executable arg(s)"
+            print "  executable is the name of the program to run (e.g. mywhich or mygrep)"
+            print "  args are optional, if present, these are passed on command-line when invoking executable"
+            ui.exit_done("Fix error(s) in custom test file '%s' and re-run custom sanitycheck." % fname)
+
+    if not custom_tests:
+        ui.exit_done("No custom test cases found in file '%s'." % fname)
+    else:
+        print "found %d test cases." % len(custom_tests)
+    return custom_tests
+
+def validate_custom_tests(custom_tests, repo):
+    build = testing.BuildClean()
+    build.run(repo, testing.FOR_SANITY)
+    print "\nExecuting your custom test cases against solution...",
+    for t in custom_tests:
+        try:
+            t.execute_solution(repo.path)
+        except testing.SolutionError as e:
+            # forgot to make/make_soln? (perhaps solved by new forced BuildClean)
+            # test case is malformed?
+            # bug in our solution?
+            print "\n\nInvalid custom test case: %s" % t.command_for_display()
+            ui.exit_done("SolutionError: " + str(e))
+    print "done."
+
+
+if __name__ == "__main__":
+    flags = [("-a:","assignname",None)]  # backdoor for staff use on non-repo directory
+    op = util.OptionParser(flags)
+    try:
+        (args, remaining) = op.process_options(sys.argv[1:])
+    except Exception as ex:
+        ui.exit_error("Incorrect %s usage: %s" % (os.path.basename(sys.argv[0]), str(ex)))
+
+    util.unbuffer_stdout()
+    path = os.getcwd()
+    custom_file = remaining[0] if remaining else None
+    if args.assignname:
+        assignname = util.unique_match(args.assignname, gen.ASSIGN_NAMES) or args.assignname
+        repo = Repo(path, reponame=assignname)
+    else:
+        try:
+            repo = HgRepo.load_from_path(path)  # raises if no .hg, wrong permissions, cannot intuit reponame
+        except Exception as ex:
+            ui.exit_done("%s\nPlease change to your project directory and re-run sanitycheck." % str(ex))
+
+    if not manifest.sanity_check_exists(repo.reponame):
+        ui.exit_done("There is no sanity check for %s." % repo.reponame)
+
+    print "Will run %s sanity check for %s in current directory %s." % ("custom" if custom_file else "default", repo.reponame, repo.path)
+    if custom_file:  # optional arg is name of file that lists custom test cases
+        custom_tests = parse_custom_test_file(custom_file, repo)
+        validate_custom_tests(custom_tests, repo)
+        print "\nNow running custom test cases against your program"
+    else:
+        custom_tests = None
+    (nfailures, nrun) = manifest.run_sanity_check(repo, tests=custom_tests)
+    what = ("custom test cases read from file '%s'" % custom_file) if custom_tests else "default sanity check cases"
+    if nfailures == 0:
+        print "\n%s This project passes all of the %s.\n" % (results.random_cheer().upper(), what)
+    else:
+        print "\nThis project passes %d of the %d %s.\n" % (nrun - nfailures, nrun, what)
+
+

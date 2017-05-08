@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="iso-8859-1" ?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>Los Angeles Times - Top News</title>
+      <link>http://feeds.latimes.com/latimes/news</link>
+    </item>
+    <item>
+      <title>Houston Chronicle</title>
+      <link>http://www.chron.com/rss/feed/Politics-275.php</link>
+    </item>
+    <item>
+      <title>Wall Street Journal - World News</title>
+      <link>http://www.wsj.com/xml/rss/3_7085.xml</link>
+    </item>
+    <item>
+      <title>Wall Street Journal - Technology</title>
+      <link>http://www.wsj.com/xml/rss/3_7455.xml</link>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="iso-8859-1" ?>
+<rss version="2.0">
+  <channel>
+    <item>
+      <title>Los Angeles Times - Headlines</title>
+      <link>http://www.latimes.com/rss2.0.xml</link>
+    </item>
+    <item>
+      <title>Los Angeles Times - Americas</title>
+      <link>http://www.latimes.com/world/mexico-americas/rss2.0.xml</link>
+    </item>
+    <item>
+      <title>Los Angeles Times - Europe</title>
+      <link>http://www.latimes.com/world/europe/rss2.0.xml</link>
+    </item>
+    <item>
+      <title>Los Angeles Times - Asia</title>
+      <link>http://www.latimes.com/world/Asia/rss2.0.xml</link>
+    </item>
+    <item>
+      <title>Los Angeles Times - Politics</title>
+      <link>http://www.latimes.com/nation/politics/rss2.0.xml</link>
+    </item>
+    <item>
+      <title>Los Angeles Times - Science</title>
+      <link>http://www.latimes.com/nation/science/rss2.0.xml</link>
+    </item>
+    <item>
+      <title>Los Angeles Times - Arts</title>
+      <link>http://www.latimes.com/entertainment/arts/rss2.0.xml</link>
+    </item>
+    <item>
+      <title>Los Angeles Times - Books</title>
+      <link>http://www.latimes.com/books/rss2.0.xml</link>
+    </item>
+    <item>
+      <title>Los Angeles Times - Music</title>
+      <link>http://www.latimes.com/entertainment/music/rss2.0.xml</link>
+    </item>
+    <item>
+      <title>Los Angeles Times - Gossip</title>
+      <link>http://www.latimes.com/entertainment/gossip/rss2.0.xml</link>
+    </item>
+  </channel>
+</rss>
